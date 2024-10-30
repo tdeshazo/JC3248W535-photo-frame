@@ -5,4 +5,4 @@ Do compile<br>
 Is Platformio<br>
 Is Arduino<br>
 Acctualy work!!!!!!!!!!!!!!!!!!!!<br>
-Im begginer, co took me like 3 days :D<br>
+Im begginer, so took me like 3 days :D<br>
