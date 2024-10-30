@@ -1,9 +1,10 @@
 
-// #include <Arduino.h>
+#include <Arduino.h>
 #include <lvgl.h>
 #include "display.h"
 #include "esp_bsp.h"
 #include "lv_port.h"
+#include "SPI.h"
 
 
 
@@ -17,6 +18,14 @@
  *
  */
 #define LVGL_PORT_ROTATION_DEGREE (90)
+
+//sd card SPI 
+#define SDCARD_CS 10   // Chip Select pin for the SD card
+#define SDCARD_MISO 13 // MISO pin for SD card
+#define SDCARD_MOSI 11 // MOSI pin for SD card
+#define SDCARD_SCK 12  // SCK pin for SD card
+
+SPIClass CustomSPI(HSPI); //spi object for SD Card
 
 
 void setup();
