@@ -20,7 +20,12 @@
     "variant": "esp32s3",
     "psram_size": "8MB"  
   },
-  "connectivity": ["wifi"],
+  "connectivity": [
+    "wifi",
+    "bluetooth",
+    "ethernet",
+    "can"
+  ],
   "debug": {
     "default_tool": "esp-builtin",
     "onboard_tools": ["esp-builtin"],
