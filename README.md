@@ -3,6 +3,7 @@
     <h1>JC3248W535EN - Minimal Platformio Project for Cheap Black Board</h1>
     <p>Just fork and build!</p>
     <p>The LVGL config file is included. Please copy it to the LVGL root folder to ensure correct colors.</p>
+    <p>This projrct WILL build on Arduino ESP32.</p>
     <p>Below are some images and datasheets from the manufacturer:</p>
     <div class="images">
         <img src="images/front.jpg" alt="Front view">
