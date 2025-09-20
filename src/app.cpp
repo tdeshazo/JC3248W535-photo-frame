@@ -1,89 +1,140 @@
-
 #include <Arduino.h>
+#include <SPI.h>
+#include <SD.h>
+#include <vector>
+
 #include <lvgl.h>
-#include "display.h"
 #include "esp_bsp.h"
 #include "lv_port.h"
-#include "SPI.h"
+#include "display.h"
 
+#define LVGL_PORT_ROTATION_DEGREE 270 // 0 / 90 / 180 / 270
+#define SDCARD_CS 10
+#define SDCARD_MISO 13
+#define SDCARD_MOSI 11
+#define SDCARD_SCK 12
+SPIClass sdSPI(HSPI);
 
+/* ---- Slideshow state ---- */
+static std::vector<String> jpgList; // S:/pic/… paths
+static size_t current = 0;
+static lv_obj_t *img_widget = nullptr;
+static lv_timer_t *slide_timer = nullptr; // Timer to advance slides
 
-/**
- * @brief LVGL porting example
- * Set the rotation degree:
- *      - 0: 0 degree
- *      - 90: 90 degree
- *      - 180: 180 degree
- *      - 270: 270 degree
- *
- */
-#define LVGL_PORT_ROTATION_DEGREE (90)
+/* -------------------------------------------------------------------------*/
+static bool is_jpg(const char *name)
+{
+    String s(name);
+    s.toLowerCase();
+    return s.endsWith(".jpg") || s.endsWith(".jpeg");
+}
 
-//sd card SPI 
-#define SDCARD_CS 10   // Chip Select pin for the SD card
-#define SDCARD_MISO 13 // MISO pin for SD card
-#define SDCARD_MOSI 11 // MOSI pin for SD card
-#define SDCARD_SCK 12  // SCK pin for SD card
+static void scan_sd_for_jpg()
+{
+    Serial.println("Scanning for directory...");
+    File dir = SD.open("/pic");
+    if (!dir)
+    {
+        Serial.println("pic not found");
+        return;
+    }
 
-SPIClass CustomSPI(HSPI); //spi object for SD Card
+    File f;
+    while ((f = dir.openNextFile()))
+    {
+        if (!f.isDirectory() && is_jpg(f.name()))
+        {
+            // prepend drive letter so LVGL can open it directly
+            jpgList.push_back(String("S:") + String(f.path()));
+        }
+        f.close();
+    }
+    Serial.printf("Found %d JPGs\n", jpgList.size());
+}
 
+/* ---- LVGL timer: advance slide ---- */
+static void next_slide(lv_timer_t *)
+{
+    if (jpgList.empty())
+        return;
+    current = (current + 1) % jpgList.size();
+    lv_img_set_src(img_widget, jpgList[current].c_str());
+}
 
-void setup();
-
-
+static void prev_slide()
+{
+    if (jpgList.empty()) return;
+    current = (current + jpgList.size() - 1) % jpgList.size();   // wrap‑around
+    lv_img_set_src(img_widget, jpgList[current].c_str());
+}
+/* ---- Arduino setup ---- */
 void setup()
 {
+    Serial.begin(115200);
+    delay(500);
 
-
-
-  size_t freePsram = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
-  bsp_display_cfg_t cfg = {
-      .lvgl_port_cfg = ESP_LVGL_PORT_INIT_CONFIG(),
-      .buffer_size = EXAMPLE_LCD_QSPI_H_RES * EXAMPLE_LCD_QSPI_V_RES,
+    /* --- Init display exactly like the BSP example ---- */
+    bsp_display_cfg_t cfg = {
+        .lvgl_port_cfg = ESP_LVGL_PORT_INIT_CONFIG(),
+        .buffer_size = EXAMPLE_LCD_QSPI_H_RES * EXAMPLE_LCD_QSPI_V_RES,
 #if LVGL_PORT_ROTATION_DEGREE == 90
-      .rotate = LV_DISP_ROT_90,
-#elif LVGL_PORT_ROTATION_DEGREE == 270
-      .rotate = LV_DISP_ROT_270,
+        .rotate = LV_DISP_ROT_90,
 #elif LVGL_PORT_ROTATION_DEGREE == 180
-      .rotate = LV_DISP_ROT_180,
-#elif LVGL_PORT_ROTATION_DEGREE == 0
-      .rotate = LV_DISP_ROT_NONE,
+        .rotate = LV_DISP_ROT_180,
+#elif LVGL_PORT_ROTATION_DEGREE == 270
+        .rotate = LV_DISP_ROT_270,
+#else
+        .rotate = LV_DISP_ROT_NONE,
 #endif
-  };
+    };
+    bsp_display_start_with_config(&cfg);
+    bsp_display_backlight_on();
 
-  bsp_display_start_with_config(&cfg);
-  bsp_display_backlight_on();
+    /* ---- Mount SD ---- */
+    sdSPI.begin(SDCARD_SCK, SDCARD_MISO, SDCARD_MOSI, SDCARD_CS);
 
-  /* Lock the mutex due to the LVGL APIs are not thread-safe */
-  bsp_display_lock(0);
+    if (!SD.begin(SDCARD_CS, sdSPI))
+    {
+        Serial.println("SD mount failed!");
+        while (true)
+            delay(1000);
+    }
 
+    Serial.println("SD mounted!");
 
-   
-    lv_obj_t * label;
+    /* ---- Register FS driver & scan card ---- */
+    lv_fs_fatfs_init();
+    scan_sd_for_jpg();
 
-    lv_obj_t * btn1 = lv_btn_create(lv_scr_act());
-   // lv_obj_add_event_cb(btn1, event_handler, LV_EVENT_ALL, NULL);
-    lv_obj_align(btn1, LV_ALIGN_CENTER, 0, -40);
+    /* ---- Build GUI ---- */
+    bsp_display_lock(0);
 
-    label = lv_label_create(btn1);
-    lv_label_set_text(label, "Button");
-    lv_obj_center(label);
+    img_widget = lv_img_create(lv_scr_act());
+    lv_obj_center(img_widget);
+    
+    /* ---- Screen gesture ---- */
+    lv_obj_add_event_cb(lv_scr_act(), [](lv_event_t * e){
+        /* Portable across 8.3.x */
+        lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
 
-    lv_obj_t * btn2 = lv_btn_create(lv_scr_act());
-   // lv_obj_add_event_cb(btn2, event_handler, LV_EVENT_ALL, NULL);
-    lv_obj_align(btn2, LV_ALIGN_CENTER, 0, 40);
-    lv_obj_add_flag(btn2, LV_OBJ_FLAG_CHECKABLE);
-    lv_obj_set_height(btn2, LV_SIZE_CONTENT);
+        if(dir == LV_DIR_RIGHT)      next_slide(nullptr);
+        else if(dir == LV_DIR_LEFT)  prev_slide();
+        else                         return;      // ignore up/down taps
 
-    label = lv_label_create(btn2);
-    lv_label_set_text(label, "Toggle");
-    lv_obj_center(label);
+        lv_timer_reset(slide_timer);             // restart 10‑s timer
+    },
+    LV_EVENT_GESTURE, nullptr);
 
-  bsp_display_unlock();
+    if (!jpgList.empty())
+        lv_img_set_src(img_widget, jpgList.front().c_str());
 
+    lv_img_cache_set_size(1); // keep one decoded frame
+
+    // lv_timer_create(next_slide, 5000, nullptr);
+    slide_timer = lv_timer_create(next_slide, 10000, nullptr);
+
+    bsp_display_unlock();
 }
 
-void loop()
-{
-
-}
+/* ---------- Arduino loop ---------------------------------------------------*/
+void loop() {}
